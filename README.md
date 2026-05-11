@@ -224,4 +224,4 @@ MIT © 2026 hookglot contributors
 
 - [Anthropic](https://anthropic.com) for Claude Code and the hooks system
 - [Ollama](https://ollama.com) for accessible local LLMs
-- [Qwen](https://github.com/QwenLM/Qwen) for excellent multilingual model
+- [DeepSeek](https://platform.deepseek.com) for excellent multilingual model
