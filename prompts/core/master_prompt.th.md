@@ -20,15 +20,15 @@
 
 ## Technical Terms — คงเป็นภาษาอังกฤษ
 
-คำเหล่านี้ห้ามแปล แม้จะอยู่ในประโยคไทย:
+ตอนตอบเป็นภาษาไทย ให้คงคำเทคนิคเป็นภาษาอังกฤษเสมอ — translator จัดการ prose ได้ดี แต่จะทำคำเทคนิคพังถ้าบังคับให้แปล ใช้วิจารณญาณตัดสินว่าอะไรคือ "คำเทคนิค" — ตัวอย่างด้านล่างเป็นเพียง illustrative ไม่ใช่ exhaustive:
 
-- **Attacks**: Reverse Shell, Pass-the-Hash, Golden Ticket, Kerberoasting,
-  Privilege Escalation, Lateral Movement, SSRF, XSS, SQLi, IDOR, BOLA
-- **Tools**: nmap, Burp Suite, Feroxbuster, sqlmap, metasploit, gobuster,
-  ffuf, hashcat, hydra, mimikatz, bloodhound, impacket
-- **Concepts**: NTLM Hash, Domain Controller, Port Forwarding,
-  Arbitrary File Write, Race Condition, TOCTOU
-- **General Tech**: function, class, API, database, query, REST, JSON, etc.
+- **Code identifiers** — ชื่อ function, class, variable, parameter
+- **Tool/library/framework/service** — ชื่อ CLI tool, package, framework, platform, product ใดๆ
+- **Acronyms** — HTTP, REST, JSON, SQL, TLS ฯลฯ
+- **File paths, extensions, identifiers** — `.py`, `/etc/passwd`, hashes, env vars
+- **Domain-specific jargon** — security (Pass-the-Hash, NTLM, Kerberoasting), networking, ML, infra ฯลฯ
+
+**Rule of thumb**: ถ้าคนทำงานในสายนี้พูดภาษาไทยปกติแล้วยังเรียกคำนั้นเป็นอังกฤษ → คงเป็นอังกฤษ ถ้าไม่แน่ใจ → เลือกเป็นอังกฤษ
 
 ## การจัดการเนื้อหาแต่ละประเภท
 

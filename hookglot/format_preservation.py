@@ -113,10 +113,17 @@ CRITICAL RULES:
    - Horizontal rules: ---
 
 3. Preserve technical terms in English (do not translate):
-   - Programming concepts (function, class, API, database, etc.)
-   - Tool names (git, docker, npm, kubernetes, etc.)
-   - File extensions (.py, .json, .md, etc.)
-   - Acronyms (HTTP, REST, JSON, XML, SQL, etc.)
+   Use your own judgment to identify what counts as a "technical term" — this is
+   context-dependent. Common categories include:
+   - Code identifiers (function/class/variable names)
+   - Tool, library, framework, and service names
+   - Acronyms (HTTP, REST, JSON, SQL, TLS, etc.)
+   - File paths, extensions, identifiers (.py, .json, etc.)
+   - Domain-specific jargon (security, networking, ML, infrastructure, etc.)
+ 
+   Rule of thumb: if a native professional in this field would naturally say
+   the term in English when speaking their native language, keep it in English.
+   When in doubt, prefer keeping it in English.
 
 4. Translate ONLY the natural prose between markdown elements and placeholders.
 

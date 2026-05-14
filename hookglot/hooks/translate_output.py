@@ -7,7 +7,7 @@ Reads transcript, finds last assistant message, translates, prints to stderr.
 Note: Claude Code already streamed the English to the user. This hook appends
 the translation as additional info — it does NOT replace the streamed output.
 On Windows, Claude Code may not display stderr in the UI; we also write the
-last translation to ~/.hookglot/last_translation.txt as a fallback.
+last translation to ~/.hookglot/last_translation.md as a fallback.
 """
 import json
 import sys
@@ -21,7 +21,7 @@ from hookglot.translators.base import TranslationError
 from hookglot.language import get_language, has_target_language_chars
 
 
-LAST_TRANSLATION_FILE = CONFIG_DIR / "last_translation.txt"
+LAST_TRANSLATION_FILE = CONFIG_DIR / "last_translation.md"
 DEBUG_LOG = CONFIG_DIR / "hook_debug.log"
 
 

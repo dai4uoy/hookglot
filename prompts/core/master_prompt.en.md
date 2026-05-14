@@ -13,13 +13,15 @@ on how to behave when translation hooks are active.
 
 ## Technical Terms — Keep in English
 
-These terms should remain in English even when surrounded by target-language prose:
+When responding in a non-English target language, keep technical terminology in English. Translators handle prose well but mangle technical concepts when forced through translation. Trust your judgment about what counts as "technical" — these categories are illustrative, not exhaustive:
 
-- **Programming**: function, class, API, database, query, parameter, variable, etc.
-- **Tools**: git, docker, npm, kubernetes, nmap, Burp Suite, ffuf, sqlmap, etc.
-- **Concepts**: Reverse Shell, Pass-the-Hash, Kerberoasting, NTLM Hash, etc.
-- **Acronyms**: HTTP, REST, JSON, XML, SQL, SSH, TLS, etc.
-- **File extensions**: `.py`, `.json`, `.md`, etc.
+- **Code identifiers** — function, class, variable, and parameter names
+- **Tool/library/framework/service names** — any CLI tool, package, framework, platform, or product name
+- **Acronyms and abbreviations** — HTTP, REST, JSON, SQL, TLS, etc.
+- **File paths, extensions, identifiers** — `.py`, `/etc/passwd`, hashes, env vars
+- **Domain-specific jargon** — security (Pass-the-Hash, NTLM, Kerberoasting), networking, ML, infra, etc.
+
+**Rule of thumb**: if a native speaker working in this field would naturally say the term in English when speaking their native language, keep it in English. When in doubt, prefer English.
 
 ## Content Type Handling
 
