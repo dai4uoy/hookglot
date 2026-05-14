@@ -24,6 +24,11 @@
 - 🔒 **Privacy-First** — Ollama keeps everything local
 - ✅ **Safe Install** — preserves your existing Claude Code hooks, memory, and slash commands
 
+
+
+https://github.com/user-attachments/assets/797a709a-982b-44be-acfe-37810cda16b3
+
+
 ---
 
 ## 🎬 How It Works
@@ -219,4 +224,4 @@ MIT © 2026 hookglot contributors
 
 - [Anthropic](https://anthropic.com) for Claude Code and the hooks system
 - [Ollama](https://ollama.com) for accessible local LLMs
-- [Qwen](https://github.com/QwenLM/Qwen) for excellent multilingual model
+- [DeepSeek](https://platform.deepseek.com) for excellent multilingual model
