@@ -1,6 +1,6 @@
 # 🌐 hookglot
 
-> Translation hooks for Claude Code — speak your language, save your tokens
+> Translation hooks for Claude Code — Reduce Claude Code token costs for non-English users by 60-80% 🌐
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
