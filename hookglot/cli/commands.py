@@ -356,19 +356,15 @@ def install_hooks(method: int):
     # Load existing settings
     settings = {}
     if settings_path.exists():
-        is_corrupt = False
         with open(settings_path, "r", encoding="utf-8") as f:
             try:
                 settings = json.load(f)
             except json.JSONDecodeError:
-                is_corrupt = True
-        
-        if is_corrupt:
-            print(colored(f"\n❌ Error: {settings_path} is not valid JSON.", "red"))
-            print(colored("Please fix the file manually before running this command.", "yellow"))
-            sys.exit(1)
-                
-
+                # Corrupt — single rolling backup, then start fresh
+                backup = settings_path.with_suffix(".json.corrupt")
+                settings_path.replace(backup)
+                print(colored(f"⚠️  Corrupted settings.json moved to {backup.name}", "yellow"))
+                settings = {}
 
     # Remove any previous hookglot entries (preserve other user hooks)
     settings = remove_hookglot_hooks_from_settings(settings)
@@ -376,7 +372,8 @@ def install_hooks(method: int):
     # Build our new hook entries
     new_entries = {}
     if method == 1:
-        # Method 1 (input-only): Claude responds in target language directly
+        # Method 1 (input-only): input hook translates TH→EN context.
+        # Stop hook also installed but only for conversation.md logging.
         new_entries["UserPromptSubmit"] = {
             "hooks": [
                 {
@@ -386,8 +383,17 @@ def install_hooks(method: int):
                 }
             ]
         }
+        new_entries["Stop"] = {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": f"{python_cmd} -m hookglot.hooks.translate_output",
+                    "timeout": 30,
+                }
+            ]
+        }
     elif method == 2:
-        # Method 2 (output-only): Master Prompt + Stop hook
+        # Method 2 (output-only): Master Prompt + Stop hook (translate + log)
         new_entries["Stop"] = {
             "hooks": [
                 {
@@ -599,18 +605,11 @@ def cmd_switch(args):
 
         settings_path = get_claude_settings_path()
         if settings_path.exists():
-            is_corrupt = False
             with open(settings_path, "r", encoding="utf-8") as f:
                 try:
                     settings = json.load(f)
                 except json.JSONDecodeError:
-                    is_corrupt = True
-                    
-            if is_corrupt:
-                print(colored(f"\n❌ Error: {settings_path} is not valid JSON.", "red"))
-                print(colored("Please fix the file manually to avoid losing your configurations.", "yellow"))
-                sys.exit(1)
-
+                    settings = {}
             # Remove only hookglot's hooks (preserve other user hooks)
             settings = remove_hookglot_hooks_from_settings(settings)
             with open(settings_path, "w", encoding="utf-8") as f:
@@ -803,30 +802,35 @@ The `NOPASSWD` entry in sudoers can be exploited."""
     print(colored("\n✅ Test complete", "green"))
 
 
+def cmd_clear_chat(args):
+    """Clear the conversation log at ~/.hookglot/conversation.md."""
+    conv_file = CONFIG_DIR / "conversation.md"
+    if conv_file.exists():
+        try:
+            conv_file.unlink()
+            print(colored("✅ Conversation log cleared", "green"))
+        except OSError as e:
+            print(colored(f"❌ Failed to clear: {e}", "red"))
+            sys.exit(1)
+    else:
+        print(colored("ℹ️  No conversation log to clear", "cyan"))
+
+
 def cmd_uninstall(args):
     """Remove hookglot from Claude Code (preserve other user config)."""
     # 1. Remove our hooks from settings.json (keep other user hooks)
     settings_path = get_claude_settings_path()
     if settings_path.exists():
-        is_corrupt = False
         with open(settings_path, "r", encoding="utf-8") as f:
             try:
                 settings = json.load(f)
             except json.JSONDecodeError:
-                is_corrupt = True
-                
-        # แจ้งเตือนและหยุดการทำงานหากไฟล์พัง เพื่อป้องกันข้อมูลของ User หาย
-        if is_corrupt:
-            print(colored(f"\n❌ Error: {settings_path} is not valid JSON.", "red"))
-            print(colored("Please fix the file manually to avoid losing your configurations.", "yellow"))
-            sys.exit(1)
-
+                settings = {}
         settings = remove_hookglot_hooks_from_settings(settings)
         with open(settings_path, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2, ensure_ascii=False)
         print(colored("✅ Hookglot hooks removed (other hooks preserved)", "green"))
 
-        
     # 2. Remove hookglot block from CLAUDE.md (preserve user content)
     remove_master_prompt_block()
 
@@ -886,6 +890,8 @@ def main():
 
     p_test = subparsers.add_parser("test", help="Test translation")
 
+    p_clear = subparsers.add_parser("clear-chat", help="Clear conversation log")
+
     p_uninstall = subparsers.add_parser("uninstall", help="Remove hooks from Claude Code")
 
     args = parser.parse_args()
@@ -902,6 +908,7 @@ def main():
         "lang": cmd_lang,
         "set-key": cmd_set_key,
         "test": cmd_test,
+        "clear-chat": cmd_clear_chat,
         "uninstall": cmd_uninstall,
     }
     handlers[args.command](args)
