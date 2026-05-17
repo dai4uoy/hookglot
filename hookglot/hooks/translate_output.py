@@ -13,6 +13,19 @@ Behavior:
 Walk-back strategy:
   Read transcript from bottom up, collecting assistant text blocks until we hit
   a real user message (not a tool_result). Safety guards prevent runaway reads.
+
+TODO (future refactor):
+  This module currently mixes two responsibilities:
+    1. Translation (Method 2 only)
+    2. Conversation logging (Methods 1 & 2)
+  Consider splitting into:
+    - hookglot/hooks/translate_output.py  (translation only)
+    - hookglot/hooks/log_conversation.py  (logging only)
+    - hookglot/hooks/_transcript.py       (shared walk_back helper)
+  Trigger for refactor: when adding a 3rd logging-related feature (summary,
+  analytics, export, etc.) or when this file grows beyond ~400 LOC.
+  Tradeoff: split adds ~200ms latency in Method 2 (extra subprocess spawn
+  + duplicate transcript read), but improves testability and future-proofing.
 """
 import json
 import sys
@@ -46,8 +59,26 @@ def debug_log(msg: str):
         pass
 
 
+def _format_as_blockquote(text: str) -> str:
+    """Format text as a markdown blockquote with each line prefixed by '> '."""
+    lines = text.strip().split("\n")
+    return "\n".join(f"> {line}" if line else ">" for line in lines)
+
+
 def append_conversation(user_msg: str, claude_msg: str):
-    """Append a turn to ~/.hookglot/conversation.md."""
+    """Append a turn to ~/.hookglot/conversation.md.
+
+    Format:
+        > **🖥️ User:**
+        >
+        > <user message>
+
+        > **🤖 Claude:**
+        >
+        > <claude response>
+
+        ---
+    """
     if not user_msg and not claude_msg:
         return
     try:
@@ -57,9 +88,11 @@ def append_conversation(user_msg: str, claude_msg: str):
             if is_new:
                 f.write("# Conversation Log\n\n")
             if user_msg:
-                f.write(f"User: {user_msg.strip()}\n\n")
+                body = _format_as_blockquote(user_msg)
+                f.write(f"> **🖥️ User:**\n>\n{body}\n\n")
             if claude_msg:
-                f.write(f"Claude: {claude_msg.strip()}\n\n")
+                body = _format_as_blockquote(claude_msg)
+                f.write(f"> **🤖 Claude:**\n>\n{body}\n\n")
             f.write("---\n\n")
     except OSError as e:
         debug_log(f"Failed to write conversation: {e}")
