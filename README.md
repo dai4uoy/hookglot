@@ -1,7 +1,7 @@
 # 🌐 hookglot
 
-⚠️ Known Bug (Token Leak in Method 2):
-Currently, there is a bug where Hookglot unintentionally inflates input token consumption on subsequent turns. This occurs because Claude Code captures the Sub-AI's translated output via stdout and injects it back into the session transcript. A fix is in progress to bypass stdout completely.
+#⚠️ Known Bug (Token Leak in Method 2):
+#Currently, there is a bug where Hookglot unintentionally inflates input token consumption on subsequent turns. This occurs because Claude Code captures the Sub-AI's translated output via stdout and injects it back into the session transcript. A fix is in progress to bypass stdout completely.
 
 > Translation hooks for Claude Code — Reduce Claude Code token costs for non-English users by 60-80% 🌐
 
