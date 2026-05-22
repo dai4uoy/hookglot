@@ -821,15 +821,15 @@ The `NOPASSWD` entry in sudoers can be exploited."""
 
 
 def cmd_start(args):
-    """Launch grip server in foreground — shows grip logs in terminal.
+    """Launch grip server in a new terminal window that shows grip's logs.
 
-    Runs grip as a foreground process so the user can see its logs
-    (request log, errors). Ctrl+C stops grip cleanly. Closing the terminal
-    will also stop grip. For detached mode, see `hookglot start-detached`
-    or run grip manually with `start /B grip ...` (Windows) / `nohup` (Unix).
+    grip runs detached (not blocking this shell, not killed when this shell
+    closes). On Windows a new console window opens showing grip's request log.
+    On Unix, grip is started in a new session; its log goes to a temp file.
     """
     import webbrowser
-    import threading
+    import platform
+    import tempfile
     import time
 
     conv_file = CONFIG_DIR / "conversation.md"
@@ -839,29 +839,50 @@ def cmd_start(args):
 
     port = 6419  # grip default
     url = f"http://localhost:{port}/"
+    is_windows = platform.system() == "Windows"
 
-    print(colored("📖 Starting grip server...", "green"))
-    print(f"   File : {conv_file}")
-    print(f"   URL  : {url}")
-    print(colored("\n  Press Ctrl+C to stop grip.", "cyan"))
-    print(colored("  Closing this terminal will also stop grip.\n", "yellow"))
-
-    # Open browser after grip has had time to start
-    def _open_browser_delayed():
-        time.sleep(2)
-        webbrowser.open(url)
-
-    threading.Thread(target=_open_browser_delayed, daemon=True).start()
-
-    # Run grip in foreground — its logs print directly to this terminal
     try:
-        subprocess.run(["grip", str(conv_file), f"127.0.0.1:{port}"])
+        if is_windows:
+            # Open grip in a NEW console window via `start`.
+            # The new window stays open and shows grip's log live.
+            # Detached: closing the launching shell does NOT kill grip.
+            cmd_str = (
+                f'start "hookglot grip — close this window to stop" '
+                f'grip "{conv_file}" 127.0.0.1:{port}'
+            )
+            subprocess.Popen(cmd_str, shell=True)
+            stop_hint = "close the 'hookglot grip' window  (or: taskkill /IM grip.exe)"
+        else:
+            # Unix: detach into its own session. grip's log streams to a temp
+            # file the user can tail; the process survives this shell closing.
+            log_path = Path(tempfile.gettempdir()) / "hookglot-grip.log"
+            log_fh = open(log_path, "w")
+            subprocess.Popen(
+                ["grip", str(conv_file), f"127.0.0.1:{port}"],
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            stop_hint = "pkill -f 'grip.*conversation.md'"
     except FileNotFoundError:
         print(colored("❌ grip not installed.", "red"))
         print(colored("   Install: pip install grip", "yellow"))
         sys.exit(1)
-    except KeyboardInterrupt:
-        print(colored("\n✓ grip stopped.", "green"))
+
+    # Give grip a moment to bind the port, then open browser
+    time.sleep(2)
+
+    print(colored("📖 grip started for conversation.md", "green"))
+    print(f"   URL  : {url}")
+    if is_windows:
+        print(f"   Log  : shown in the new 'hookglot grip' console window")
+    else:
+        print(f"   Log  : {log_path}  (tail -f to watch)")
+    print(colored(f"\n  To stop grip: {stop_hint}", "cyan"))
+    print(colored("  grip keeps running after you close this shell.", "cyan"))
+
+    webbrowser.open(url)
 
 
 def cmd_clear_chat(args):
