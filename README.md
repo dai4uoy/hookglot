@@ -1,8 +1,5 @@
 # 🌐 hookglot
 
-# ⚠️ Known Bug (Token Leak in Method 2):
-# Currently, there is a bug where Hookglot unintentionally inflates input token consumption on subsequent turns. This occurs because Claude Code captures the Sub-AI's translated output via stdout and injects it back into the session transcript. A fix is in progress to bypass stdout completely.
-
 > Translation hooks for Claude Code — Reduce Claude Code token costs for non-English users by 60-80% 🌐
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -40,12 +37,12 @@ https://github.com/user-attachments/assets/797a709a-982b-44be-acfe-37810cda16b3
 Method 1 (Input-only) ⭐ Recommended for Thai
    Native prompt ──► [hook translates → English] ──► Claude
                                                        │
-   Native response ◄──────────────────────────────────┘ (Claude responds in your language)
+   Native response ◄──────────────────────────────────-┘ (Claude responds in your language)
 
 Method 2 (Output-only)
    Native prompt ────────────────────────────────► Claude (Master Prompt forces English)
                                                        │
-   English response shown in Claude Code              │
+   English response shown in Claude Code               │
                                                        ▼
                                           [Stop hook translates → Native]
                                                        │
