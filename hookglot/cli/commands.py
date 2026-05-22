@@ -884,7 +884,16 @@ def cmd_clear_chat(args):
 
 
 def cmd_uninstall(args):
-    """Remove hookglot from Claude Code (preserve other user config)."""
+    """Remove hookglot from Claude Code.
+
+    By default, performs a FULL uninstall: hooks, master prompt, slash commands,
+    AND the config directory (~/.hookglot/ — config, API keys, logs, conversation
+    history). Use --keep-config to preserve ~/.hookglot/.
+    """
+    import shutil
+
+    keep_config = getattr(args, "keep_config", False)
+
     # 1. Remove our hooks from settings.json (keep other user hooks)
     settings_path = get_claude_settings_path()
     if settings_path.exists():
@@ -900,6 +909,7 @@ def cmd_uninstall(args):
 
     # 2. Remove hookglot block from CLAUDE.md (preserve user content)
     remove_master_prompt_block()
+    print(colored("✅ Master Prompt block removed from CLAUDE.md", "green"))
 
     # 3. Remove our slash commands
     cmd_dir = Path.home() / ".claude" / "commands"
@@ -914,8 +924,27 @@ def cmd_uninstall(args):
         if removed:
             print(colored(f"✅ Removed {len(removed)} slash commands", "green"))
 
-    print(colored(f"\nConfig and API keys still in {CONFIG_DIR}", "cyan"))
-    print(colored("(delete manually if you want to fully remove hookglot)", "cyan"))
+    # 4. Remove config directory (~/.hookglot/) unless --keep-config
+    if keep_config:
+        print(colored(f"\nℹ️  Config preserved at {CONFIG_DIR}", "cyan"))
+        print(colored("   (--keep-config was set)", "cyan"))
+    else:
+        if CONFIG_DIR.exists():
+            try:
+                shutil.rmtree(CONFIG_DIR)
+                print(colored(f"✅ Removed config directory {CONFIG_DIR}", "green"))
+                print(colored("   (config.yaml, .env, logs, conversation history)", "green"))
+            except OSError as e:
+                print(colored(f"⚠️  Could not remove {CONFIG_DIR}: {e}", "yellow"))
+                print(colored(f"   Delete it manually.", "yellow"))
+
+    # 5. Tell user how to remove the Python package itself
+    print(colored("\n🎯 hookglot uninstalled from Claude Code.", "green"))
+    print(colored("\nTo also remove the Python package:", "cyan"))
+    print(f"   {colored('pip uninstall hookglot', 'green')}")
+    if keep_config:
+        print(colored(f"\nTo remove preserved config later:", "cyan"))
+        print(f"   {colored(str(CONFIG_DIR), 'green')}  (delete this folder)")
 
 
 # ─────────────────────────────────────────────
@@ -950,7 +979,7 @@ def main():
             "    PowerShell:  Get-Content ~/.hookglot/conversation.md -Wait -Tail 0\n"
             "    Linux/Mac:   tail -f ~/.hookglot/conversation.md\n"
             "\n"
-            "Docs: https://github.com/dai4uoy/hookglot"
+            "Docs: https://github.com/yourusername/hookglot"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -980,7 +1009,12 @@ def main():
 
     p_start = subparsers.add_parser("start", help="Open conversation.md in browser via grip")
 
-    p_uninstall = subparsers.add_parser("uninstall", help="Remove hooks from Claude Code")
+    p_uninstall = subparsers.add_parser("uninstall", help="Remove hookglot completely")
+    p_uninstall.add_argument(
+        "--keep-config",
+        action="store_true",
+        help="Preserve ~/.hookglot/ (config, API keys, conversation history)",
+    )
 
     args = parser.parse_args()
 
