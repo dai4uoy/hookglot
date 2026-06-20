@@ -45,6 +45,91 @@ SESSIONS_MAP = CONFIG_DIR / "sessions.json"
 LEGACY_CONVERSATION = CONFIG_DIR / "conversation.md"
 DEBUG_LOG = CONFIG_DIR / "hook_debug.log"
 
+# Hidden signature (two zero-width spaces) prepended to translated stderr output.
+# Used to identify hookglot's OWN Stop-hook leak in the transcript so cleanup
+# never touches other plugins' hook_success entries (e.g. caveman).
+HOOKGLOT_SIG = "\u200b\u200b"
+
+
+# Lazy cleanup: only rewrite the transcript once this many leaked entries have
+# accumulated, instead of every turn. Batching keeps per-turn latency near zero
+# (most turns just read + count; the write happens once per N turns).
+LAZY_CLEANUP_THRESHOLD = 5
+
+
+def cleanup_previous_leak(transcript_path: str):
+    """Remove hookglot's own leaked display output from the transcript (lazy).
+
+    Background: when inline display is on, Claude Code captures the Stop hook's
+    systemMessage into the transcript as a `hook_system_message` attachment.
+    Testing showed this does NOT reach Anthropic billing (the harness filters
+    Stop-hook stdout out of context), so cleanup is purely a disk-hygiene /
+    future-proofing measure — hence "lazy".
+
+    Lazy strategy: each turn we read the transcript and count leaked entries
+    carrying HOOKGLOT_SIG. We only rewrite the file once at least
+    LAZY_CLEANUP_THRESHOLD have piled up. This makes most turns a cheap
+    read-and-count with no write.
+
+    Only `hook_system_message` entries carrying HOOKGLOT_SIG are removed, so
+    stderr error notices and other plugins' hooks are never touched.
+
+    Atomic write (temp + os.replace) guarantees the transcript is never left
+    half-written even if the process is killed mid-cleanup. Lock/permission
+    failures are swallowed — the batch is simply cleaned on a later turn.
+    """
+    if not transcript_path:
+        return
+    tpath = Path(transcript_path)
+    if not tpath.exists():
+        return
+
+    try:
+        with open(tpath, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except (IOError, OSError, PermissionError):
+        return  # locked / unavailable — retry next turn
+
+    def is_leak(line: str) -> bool:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            return False
+        if entry.get("type") != "attachment":
+            return False
+        att = entry.get("attachment", {})
+        if not isinstance(att, dict):
+            return False
+        if att.get("hookName") != "Stop":
+            return False
+        if att.get("type") != "hook_system_message":
+            return False
+        body = (att.get("content", "") or att.get("stdout", "") or "")
+        return HOOKGLOT_SIG in body
+
+    leak_count = sum(1 for ln in lines if is_leak(ln))
+
+    # Lazy gate: wait until enough leaks accumulate before paying for a rewrite.
+    if leak_count < LAZY_CLEANUP_THRESHOLD:
+        return
+
+    kept = [ln for ln in lines if not is_leak(ln)]
+
+    # Atomic write: temp file in same dir, then os.replace
+    tmp = tpath.with_suffix(tpath.suffix + ".hgtmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.writelines(kept)
+        os.replace(tmp, tpath)  # atomic on all OSes
+        debug_log(f"cleanup: removed {leak_count} leaked entry(ies) (lazy batch)")
+    except (IOError, OSError, PermissionError) as e:
+        debug_log(f"cleanup: write failed ({e}) — will retry next turn")
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+
 # Safety guards — prevent runaway transcript reads and oversized translations
 MAX_LOOKBACK_LINES = 100        # Don't walk back more than this many lines
 MAX_BLOCKS_TO_COLLECT = 10      # Cap on assistant blocks per turn
@@ -61,6 +146,58 @@ def debug_log(msg: str):
             f.write(f"[{ts}] [stop] {msg}\n")
     except OSError:
         pass
+
+
+def _sanitize_title(s: str, maxlen: int = 50) -> str:
+    """Make a string safe for a filename: lowercase, hyphen-separated, no junk."""
+    s = (s or "").strip().lower()
+    s = re.sub(r"[^\w\s-]", "", s)      # drop punctuation/symbols
+    s = re.sub(r"[\s_]+", "-", s)        # whitespace/underscore → hyphen
+    s = re.sub(r"-+", "-", s).strip("-")
+    return s[:maxlen].strip("-") or "session"
+
+
+def generate_session_title(text: str, translator=None) -> str:
+    """Make a short filename title for a session.
+
+    If a translator is available, ask it for a 3–6 word English title (one extra
+    provider call — happens ONCE per session, only when the file is first created).
+    On any failure, or when no translator is given, fall back to the first few
+    words of the text (free, no API call).
+    """
+    text = (text or "").strip()
+    if not text:
+        return "session"
+    if translator is not None:
+        try:
+            prompt = (
+                "Create a concise English title (3 to 6 words) summarizing the "
+                "user's request, suitable for a filename. Output ONLY the title "
+                "text — no quotes, no punctuation, no explanation."
+            )
+            raw = translator._call_api(prompt, text[:500])
+            t = _sanitize_title(raw)
+            if t and t != "session":
+                return t
+        except Exception as e:
+            debug_log(f"title gen failed, using fallback: {e}")
+    # Fallback: first ~6 words of the text
+    words = re.sub(r"[^\w\s-]", "", text).split()[:6]
+    return _sanitize_title(" ".join(words))
+
+
+def _new_session_title(session_id: str, user_msg: str, translator=None) -> str:
+    """Title for a session's file — generated ONLY when the session is new.
+
+    Returns "" for an already-seen session so no extra provider call is made on
+    later turns. The AI title (1 provider call) thus happens once per session.
+    """
+    mapping = _load_sessions_map()
+    if session_id and session_id in mapping:
+        existing = CONVERSATIONS_DIR / mapping[session_id]
+        if existing.exists():
+            return ""
+    return generate_session_title(user_msg, translator)
 
 
 def get_session_id_from_transcript(transcript_path: str) -> str:
@@ -98,43 +235,49 @@ def _save_sessions_map(mapping: dict):
         debug_log(f"Failed to write sessions map: {e}")
 
 
-def _get_or_create_session_file(session_id: str) -> Path:
+def _get_or_create_session_file(session_id: str, title: str = "") -> Path:
     """Return the conversation file path for this session.
 
-    Creates a new timestamp-named file on first encounter, reuses for subsequent turns.
-    Falls back to 'unknown.md' if no session_id is available.
+    Layout: ~/.hookglot/conversations/<dd.mm.yy>/<ai-title>.md
+    Creates the dated folder + AI-titled file on first encounter, then reuses it
+    for subsequent turns (looked up via sessions.json).
     """
     CONVERSATIONS_DIR.mkdir(parents=True, exist_ok=True)
-
-    if not session_id:
-        return CONVERSATIONS_DIR / "unknown.md"
 
     mapping = _load_sessions_map()
 
     # Existing session — reuse file if still present
-    if session_id in mapping:
+    if session_id and session_id in mapping:
         existing = CONVERSATIONS_DIR / mapping[session_id]
         if existing.exists():
             return existing
 
-    # New session — create datetime-named file
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"{timestamp}.md"
+    # New session — create <dd.mm.yy>/<title>.md
+    date_folder = datetime.now().strftime("%d.%m.%y")
+    folder = CONVERSATIONS_DIR / date_folder
+    folder.mkdir(parents=True, exist_ok=True)
 
-    # Handle rare collision (same-second new sessions)
+    base = _sanitize_title(title) if title else datetime.now().strftime("%H-%M-%S")
+    filename = f"{base}.md"
+    rel = f"{date_folder}/{filename}"
+
+    # Handle collision (same title same day)
     counter = 1
-    while (CONVERSATIONS_DIR / filename).exists():
-        filename = f"{timestamp}_{counter}.md"
+    while (CONVERSATIONS_DIR / rel).exists():
+        filename = f"{base}-{counter}.md"
+        rel = f"{date_folder}/{filename}"
         counter += 1
 
-    filepath = CONVERSATIONS_DIR / filename
-    mapping[session_id] = filename
-    _save_sessions_map(mapping)
+    filepath = CONVERSATIONS_DIR / rel
+    if session_id:
+        mapping[session_id] = rel
+        _save_sessions_map(mapping)
 
     # Write header
     try:
         with open(filepath, "w", encoding="utf-8") as f:
-            f.write(f"# claude --resume {session_id}\n\n")
+            if session_id:
+                f.write(f"# claude --resume {session_id}\n\n")
     except OSError as e:
         debug_log(f"Failed to create session file: {e}")
 
@@ -148,31 +291,23 @@ def _write_turn(filepath: Path, user_msg: str, claude_msg: str):
             f.write(f"## 🖥️ User\n\n{user_msg.strip()}\n\n")
         if claude_msg:
             f.write(f"## 🤖 Claude\n\n{claude_msg.strip()}\n\n")
-        f.write("---\n\n")
+        # Minimal centered divider between turns
+        f.write('<div align="center">⸻ ✦ ⸻</div>\n\n')
 
 
-def append_conversation(user_msg: str, claude_msg: str, session_id: str = ""):
+def append_conversation(user_msg: str, claude_msg: str, session_id: str = "", title: str = ""):
     """Append a turn to BOTH:
-    - Per-session file (~/.hookglot/conversations/<datetime>.md)
+    - Per-session file (~/.hookglot/conversations/<dd.mm.yy>/<ai-title>.md)
     - Cumulative file (~/.hookglot/conversation.md) — clearable via /hookglot-clear-chat
 
-    Format (heading-based, no blockquote):
-        ## 🖥️ User
-
-        <user text>
-
-        ## 🤖 Claude
-
-        <claude text>
-
-        ---
+    `title` is only used when the per-session file is first created.
     """
     if not user_msg and not claude_msg:
         return
 
     # 1. Per-session file (manual delete only)
     try:
-        session_file = _get_or_create_session_file(session_id)
+        session_file = _get_or_create_session_file(session_id, title)
         _write_turn(session_file, user_msg, claude_msg)
     except OSError as e:
         debug_log(f"Failed to write session file: {e}")
@@ -306,6 +441,13 @@ def main():
         sys.exit(0)
 
     transcript_path = input_data.get("transcript_path", "")
+
+    # Lazy cleanup of leaked display entries — only relevant when inline display
+    # is on (that's the only thing that writes leaks). Skipped entirely when
+    # display is off, so the default config pays zero cleanup overhead.
+    if config.get("output", False):
+        cleanup_previous_leak(transcript_path)
+
     user_msg, assistant_blocks = walk_back_transcript(transcript_path)
     session_id = get_session_id_from_transcript(transcript_path)
     debug_log(f"session_id={session_id or '(none)'}")
@@ -333,7 +475,8 @@ def main():
     # No translation needed — just log to conversation file
     # ─────────────────────────────────────────────────
     if method == 1:
-        append_conversation(user_msg, full_response, session_id)
+        title = _new_session_title(session_id, user_msg)
+        append_conversation(user_msg, full_response, session_id, title)
         debug_log(f"method 1: logged {len(full_response)} chars (session={session_id[:8] if session_id else 'unknown'})")
         sys.exit(0)
 
@@ -361,7 +504,8 @@ def main():
             debug_log(f"target_lang ratio (after stripping code): {ratio:.2f}")
             if ratio > 0.25:
                 debug_log("response already mostly in target lang, skipping translation")
-                append_conversation(user_msg, full_response, session_id)
+                title = _new_session_title(session_id, user_msg)
+                append_conversation(user_msg, full_response, session_id, title)
                 sys.exit(0)
 
     # Cap translation size — fallback to last block only if too big
@@ -411,18 +555,34 @@ def main():
         )
         sys.exit(1)
 
-    # Log Thai version to conversation.md
-    append_conversation(user_msg, translated, session_id)
+    # Log Thai version to conversation file (AI title on first turn of session)
+    title = _new_session_title(session_id, user_msg, translator)
+    append_conversation(user_msg, translated, session_id, title)
     debug_log(
         f"method 2: translated {len(full_response)} chars → {len(translated)} chars, logged"
     )
 
-    # NO output to stderr or stdout — verified in v1.5.0+ that Windows Claude
-    # Code captures stderr into transcript as `hook_success` attachment, causing
-    # token leak (~1500 tokens/turn for medium responses). Display via:
-    #   - ~/.hookglot/conversation.md (cumulative)
-    #   - ~/.hookglot/conversations/<datetime>.md (per-session)
-    #   - `hookglot start` or `/hookglot-start` to view in browser via grip
+    # Optional inline display ("Stop says: …"). OFF by default; toggled with
+    # `hookglot switch --output`. When on, the translation is emitted as a
+    # systemMessage (stdout JSON) — the only channel Claude Code actually renders
+    # for Stop hooks (exit-0 stderr is never shown per the hook spec, and was
+    # confirmed not to display on Windows/macOS/Linux in testing).
+    #
+    # The hidden signature (HOOKGLOT_SIG) lets the lazy cleanup identify and
+    # remove these entries from the transcript later. (Testing showed they don't
+    # reach Anthropic billing regardless — the harness filters Stop-hook stdout —
+    # so cleanup is disk-hygiene only.)
+    #
+    # stderr is intentionally NOT used for display (it never renders); it is
+    # reserved for error notices above.
+    if config.get("output", False):
+        try:
+            sys.stdout.write(json.dumps({
+                "suppressOutput": False,
+                "systemMessage": f"\n\n{HOOKGLOT_SIG}{translated}\n",
+            }))
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

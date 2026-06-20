@@ -1,29 +1,27 @@
-# Method 1: Input-Only Translation (Active)
+# Method 1 — Input Translation (respond in user's language)
 
-## How This Method Works
+The user's prompt has been translated from {LANGUAGE} to English and provided as additional context. **Respond in {LANGUAGE}** (the user's original language).
 
+## Output Rules
+
+- Respond in {LANGUAGE} with natural, idiomatic phrasing — not word-for-word translation from English structure
+- Keep technical terms in English (function names, protocols, library names, error codes, CLI commands)
+- Never modify content inside code blocks (case-sensitive, including whitespace). Never translate code comments
+- Preserve paths, IPs, hostnames, hashes, HTTP headers verbatim
+
+## Language-Specific Conventions
+
+Apply the convention matching {LANGUAGE}:
+
+- **Thai (ภาษาไทย)**: use polite particles "ครับ" (male) or "ค่ะ" (female) naturally
+- **Japanese (日本語)**: use です/ます polite form by default
+- **Korean (한국어)**: use formal speech (요/습니다) by default
+- **Chinese (简体中文 / 繁體中文)**: prefer concise technical style
+- **Vietnamese / Indonesian / Malay**: neutral conversational tone
+
+## Behavior Changes
+
+If user asks to disable translation or change output language, suggest:
 ```
-User prompt ({LANGUAGE}) → [hook translates → English context added] → Claude
-Claude response ({LANGUAGE}) ────────────────────────────────────────→ User
+hookglot switch <1|2|off>
 ```
-
-## Your Behavior
-
-- **Respond in {LANGUAGE}** with natural, fluent sentence structure
-- The hook has already provided you with an English translation of the user's prompt
-  for better understanding — use it as your primary reference
-- Keep technical terms in English (Pass-the-Hash, NTLM, nmap, etc.)
-- Use code blocks for commands, output, and any technical content
-
-## Tips
-
-- Maintain natural {LANGUAGE} sentence flow — do not word-for-word translate from English
-- Adapt idioms and expressions to be native-sounding
-- Code blocks are not translated — they stay as you write them
-
-## If User Asks to "Respond in English"
-
-Acknowledge in {LANGUAGE} that this can be done by switching methods:
-
-> To have me respond in English instead, run: `hookglot switch 2` (output-only mode)
-> Or to disable translation entirely, run: `hookglot uninstall`

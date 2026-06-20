@@ -50,6 +50,13 @@ class PreservedDoc:
 
         Iterates placeholders in reverse numeric order so that any reference like
         ⟨⟨10⟩⟩ is replaced before ⟨⟨1⟩⟩.
+
+        Multiline code blocks (``` … ```) are re-inserted with blank lines around
+        them. The translator sometimes drops the newlines next to a placeholder,
+        which would glue the closing ``` onto Thai prose (e.g. "``` ผู้ที่...") and
+        break Markdown rendering. Forcing blank lines keeps the fence on its own
+        line, matching how Claude originally wrote it. Inline code (`x`) is left
+        untouched.
         """
         result = translated_text
 
@@ -61,8 +68,13 @@ class PreservedDoc:
 
         for placeholder in sorted(self.preserved.keys(), key=placeholder_index, reverse=True):
             original = self.preserved[placeholder]
+            # Triple-backtick block → isolate on its own lines
+            if original.startswith("```"):
+                original = f"\n\n{original}\n\n"
             result = result.replace(placeholder, original)
 
+        # Collapse any runs of 3+ newlines introduced above back to a clean blank line
+        result = re.sub(r"\n{3,}", "\n\n", result)
         return result
 
 

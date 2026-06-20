@@ -390,8 +390,9 @@ def install_hooks(method: int):
     # Build our new hook entries
     new_entries = {}
     if method == 1:
-        # Method 1 (input-only): input hook translates TH→EN context.
-        # Stop hook also installed but only for conversation.md logging.
+        # Method 1 (input-only): input hook translates user's prompt to EN
+        # context for Claude. Claude responds in target language directly.
+        # No Stop hook — no conversation.md logging for Method 1.
         new_entries["UserPromptSubmit"] = {
             "hooks": [
                 {
@@ -401,17 +402,9 @@ def install_hooks(method: int):
                 }
             ]
         }
-        new_entries["Stop"] = {
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": f"{python_cmd} -m hookglot.hooks.translate_output",
-                    "timeout": 30,
-                }
-            ]
-        }
     elif method == 2:
-        # Method 2 (output-only): Master Prompt + Stop hook (translate + log)
+        # Method 2 (output-only): Master Prompt forces Claude to respond in EN,
+        # Stop hook translates to target language + logs to conversation.md
         new_entries["Stop"] = {
             "hooks": [
                 {
@@ -479,6 +472,11 @@ def install_master_prompt(language: str, method: int):
     - If file exists without markers → append the block at the end
 
     User-written content outside the markers is NEVER touched.
+
+    v1.5.0+ (Option 3 + optional custom prompt):
+    - Required: prompts/method_overlay/method{1,2}.md (per-method behavior)
+    - Optional: prompts/core/master_prompt.en.md (user's custom instructions
+      applied across all methods — edit freely)
     """
     repo_root = get_repo_root()
     prompts_dir = repo_root / "prompts"
@@ -488,32 +486,40 @@ def install_master_prompt(language: str, method: int):
         print(colored("    Master Prompt not installed. Install manually if needed.", "yellow"))
         return
 
-    # Pick base prompt: Thai uses thai version, others use English canonical
-    if language == "th":
-        base_file = prompts_dir / "core" / "master_prompt.th.md"
-    else:
-        base_file = prompts_dir / "core" / "master_prompt.en.md"
-
     overlay_file = prompts_dir / "method_overlay" / f"method{method}.md"
-
-    if not base_file.exists() or not overlay_file.exists():
-        print(colored(f"⚠️  Prompt files missing", "yellow"))
+    if not overlay_file.exists():
+        print(colored(f"⚠️  Overlay file missing: {overlay_file}", "yellow"))
         return
 
-    base = base_file.read_text(encoding="utf-8")
     overlay = overlay_file.read_text(encoding="utf-8")
 
     # Replace {LANGUAGE} placeholder
     target_lang = get_language(language)
     lang_str = f"{target_lang.english_name} ({target_lang.native_name})"
-    base = base.replace("{LANGUAGE}", lang_str)
     overlay = overlay.replace("{LANGUAGE}", lang_str)
 
-    # Build the hookglot block, wrapped in markers
+    # Check for optional custom master prompt
+    custom_file = prompts_dir / "core" / "master_prompt.en.md"
+    blocks = []
+
+    if custom_file.exists():
+        custom = custom_file.read_text(encoding="utf-8")
+        custom = custom.replace("{LANGUAGE}", lang_str)
+        # Only include if user has actually added content (not just comments/template)
+        # Heuristic: strip HTML comments + whitespace + check non-trivial content
+        import re
+        stripped = re.sub(r"<!--.*?-->", "", custom, flags=re.DOTALL).strip()
+        if stripped and len(stripped) > 50:  # has real content beyond template
+            blocks.append(custom)
+            print(colored(f"   ℹ️  Including custom master prompt from {custom_file.name}", "cyan"))
+
+    # Method overlay (always last so it takes precedence)
+    blocks.append(overlay)
+
     hookglot_block = (
         f"{HOOKGLOT_MARKER_START}\n\n"
-        f"{base}\n\n---\n\n{overlay}\n\n"
-        f"{HOOKGLOT_MARKER_END}"
+        + "\n\n---\n\n".join(blocks)
+        + f"\n\n{HOOKGLOT_MARKER_END}"
     )
 
     claude_md = get_claude_md_path()
@@ -584,6 +590,8 @@ def cmd_status(args):
     print(f"  Language     : {lang_str} [{lang_code}]")
     print(f"  Method       : {config.get('method')} ({method_names.get(config.get('method'), 'unknown')})")
     print(f"  Translator   : {config.get('translator')}")
+    if config.get("method") == 2:
+        print(f"  Display      : {'on' if config.get('output', False) else 'off'} (Stop says)")
 
     # Provider details
     try:
@@ -653,6 +661,10 @@ def cmd_switch(args):
 
     config = load_config()
     config["method"] = method
+
+    # Apply --output/-o flag if provided (persists in config until changed again)
+    if getattr(args, "output", None) is not None:
+        config["output"] = (args.output == "on")
     save_config(config)
 
     # Re-install hooks and master prompt for new method
@@ -661,6 +673,14 @@ def cmd_switch(args):
 
     method_names = {1: "Input-only", 2: "Output-only"}
     print(colored(f"✅ Switched to Method {method} ({method_names[method]})", "green"))
+
+    display_on = config.get("output", False)
+    if method == 2:
+        state = "ON" if display_on else "OFF"
+        print(colored(f"   Inline display (Stop says): {state}", "cyan"))
+        if not display_on:
+            print(colored("   Enable with: hookglot switch 2 --output on", "cyan"))
+        print(colored("   Full rendered log: hookglot start", "cyan"))
 
     # Warn if there's a project-level .claude/ that may need updating
     warn_about_project_claude(method)
@@ -1014,6 +1034,11 @@ def main():
 
     p_switch = subparsers.add_parser("switch", help="Switch translation method (1, 2, or off)")
     p_switch.add_argument("method", help="Method: 1 = input-only, 2 = output-only, off = disable hooks")
+    p_switch.add_argument(
+        "-o", "--output", choices=["on", "off"], default=None,
+        help="Inline translation display ('Stop says: …'). Off by default. "
+             "Persists across switches until changed again.",
+    )
 
     p_trans = subparsers.add_parser("translator", help="Switch translator provider")
     p_trans.add_argument("provider", help="Provider name")
