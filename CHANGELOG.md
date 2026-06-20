@@ -8,30 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.5.0-beta] - 2026
 
 ### Added
-- **`hookglot start` CLI command** — launches grip server (renders `conversation.md` like GitHub) and opens browser automatically. Grip runs detached so terminal returns immediately.
+- **Translation display restored with leak-safe cleanup** — Method 2 again shows the Thai translation in the Claude Code terminal (via stderr). To prevent the displayed text from inflating Anthropic tokens, each Stop hook now removes the *previous* turn's leaked `hook_success` attachment from the transcript before processing. Net effect: **inline display + zero billing leak**.
+  - A hidden signature (two zero-width spaces) marks hookglot's own output so cleanup never touches other plugins' hook entries (e.g. caveman).
+  - Cleanup uses atomic write (temp file + `os.replace`) so the transcript is never left half-written, even if the process is killed mid-cleanup.
+  - File-lock / permission errors during cleanup are swallowed — the leak is simply removed on a later turn instead.
+  - The final turn of a session leaves one un-cleaned entry on disk (no next turn to clean it), but it never reaches Anthropic since the session has ended.
+- **`hookglot start` CLI command** — launches grip server (renders `conversation.md` like GitHub) and opens browser automatically.
 - **`/hookglot-start` slash command** — same as CLI but invokable from inside Claude Code.
-- **Auto-install of `grip`** during `hookglot install` — no manual setup needed.
-- **Usage guide** displayed after install — explains how to view conversation logs (CLI, slash, manual).
+- **Auto-install of `grip`** via `pyproject.toml` dependencies.
+- **Usage guide** displayed after install — explains how to view conversation logs (CLI, slash, manual, live tail).
 
-### Why this matters
-Until now, viewing `conversation.md` meant manually opening the file in an editor.
-With grip integration, you can read your full translated chat history in a GitHub-style
-rendered view directly in your browser, with one command.
+### Changed
+- **Master Prompt architecture → Option 3 (lean) + optional custom prompt**:
+  - Method overlays (`method1.md`, `method2.md`) are now self-contained with all needed rules (output language, code preservation, language-specific conventions).
+  - `prompts/core/master_prompt.en.md` is now an OPTIONAL custom prompt — a pure HTML-comment template by default (skipped). Add real content outside the comments to inject custom instructions across all methods.
+  - Removed the conflict where a language-target master prompt fought the Method 2 "English only" rule, which previously caused Claude to ignore Method 2 and respond in Thai.
+  - Method 1 no longer installs a Stop hook (no `conversation.md` logging for Method 1).
+- **`hookglot uninstall` is now a full purge by default** — removes hooks, master prompt block, slash commands, AND `~/.hookglot/`. Use `--keep-config` to preserve config, keys, and history.
+
+### Default port
+`http://localhost:6419/`
 
 ### Stop grip server
 ```
 # Windows
-taskkill /F /PID <pid_shown_when_started>
+taskkill /F /PID <pid>   (or close the grip console window)
 
 # macOS / Linux
 kill <pid>
 ```
 
-### Default port
-`http://localhost:6419/`
-
 ---
-
 
 ## [1.4.2-beta] - 2026
 
