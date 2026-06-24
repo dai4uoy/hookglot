@@ -43,6 +43,7 @@ from hookglot.language import get_language, has_target_language_chars
 CONVERSATIONS_DIR = CONFIG_DIR / "conversations"
 SESSIONS_MAP = CONFIG_DIR / "sessions.json"
 LEGACY_CONVERSATION = CONFIG_DIR / "conversation.md"
+LEGACY_CONVERSATION_EN = CONFIG_DIR / "conversation_en.md"
 DEBUG_LOG = CONFIG_DIR / "hook_debug.log"
 
 # Hidden signature (two zero-width spaces) prepended to translated stderr output.
@@ -295,10 +296,14 @@ def _write_turn(filepath: Path, user_msg: str, claude_msg: str):
         f.write('<div align="center">⸻ ✦ ⸻</div>\n\n')
 
 
-def append_conversation(user_msg: str, claude_msg: str, session_id: str = "", title: str = ""):
-    """Append a turn to BOTH:
-    - Per-session file (~/.hookglot/conversations/<dd.mm.yy>/<ai-title>.md)
-    - Cumulative file (~/.hookglot/conversation.md) — clearable via /hookglot-clear-chat
+def append_conversation(user_msg: str, claude_msg: str, session_id: str = "",
+                        title: str = "", claude_en: str = ""):
+    """Append a turn to:
+    - Per-session file (~/.hookglot/conversations/<dd.mm.yy>/<ai-title>.md) — target language
+    - Cumulative file (~/.hookglot/conversation.md) — target language, clearable
+    - Cumulative EN file (~/.hookglot/conversation_en.md) — Claude's original English,
+      only when `claude_en` is supplied (Method 2). Lets you keep/export the English
+      source alongside the translated log.
 
     `title` is only used when the per-session file is first created.
     """
@@ -318,6 +323,14 @@ def append_conversation(user_msg: str, claude_msg: str, session_id: str = "", ti
         _write_turn(LEGACY_CONVERSATION, user_msg, claude_msg)
     except OSError as e:
         debug_log(f"Failed to write conversation.md: {e}")
+
+    # 3. Cumulative conversation_en.md — original English (Method 2 only)
+    if claude_en:
+        try:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            _write_turn(LEGACY_CONVERSATION_EN, user_msg, claude_en)
+        except OSError as e:
+            debug_log(f"Failed to write conversation_en.md: {e}")
 
 
 def is_real_user_message(content) -> bool:
@@ -556,8 +569,9 @@ def main():
         sys.exit(1)
 
     # Log Thai version to conversation file (AI title on first turn of session)
+    # + original English to conversation_en.md
     title = _new_session_title(session_id, user_msg, translator)
-    append_conversation(user_msg, translated, session_id, title)
+    append_conversation(user_msg, translated, session_id, title, claude_en=full_response)
     debug_log(
         f"method 2: translated {len(full_response)} chars → {len(translated)} chars, logged"
     )

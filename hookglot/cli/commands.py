@@ -906,22 +906,26 @@ def cmd_start(args):
 
 
 def cmd_clear_chat(args):
-    """Clear the cumulative conversation.md log.
+    """Clear the cumulative conversation logs (target language + English).
 
     Per-session files in ~/.hookglot/conversations/ are NOT touched
     (user can manually delete those if needed).
     """
-    conv_file = CONFIG_DIR / "conversation.md"
-    if conv_file.exists():
-        try:
-            conv_file.unlink()
-            print(colored("✅ Cleared conversation.md", "green"))
-            print(colored("ℹ️  Per-session files in ~/.hookglot/conversations/ kept", "cyan"))
-        except OSError as e:
-            print(colored(f"❌ Failed to clear: {e}", "red"))
-            sys.exit(1)
+    targets = [CONFIG_DIR / "conversation.md", CONFIG_DIR / "conversation_en.md"]
+    cleared = []
+    for conv_file in targets:
+        if conv_file.exists():
+            try:
+                conv_file.unlink()
+                cleared.append(conv_file.name)
+            except OSError as e:
+                print(colored(f"❌ Failed to clear {conv_file.name}: {e}", "red"))
+                sys.exit(1)
+    if cleared:
+        print(colored(f"✅ Cleared {', '.join(cleared)}", "green"))
+        print(colored("ℹ️  Per-session files in ~/.hookglot/conversations/ kept", "cyan"))
     else:
-        print(colored("ℹ️  No conversation.md to clear", "cyan"))
+        print(colored("ℹ️  No conversation logs to clear", "cyan"))
 
 
 def cmd_uninstall(args):

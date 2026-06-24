@@ -66,15 +66,21 @@ class PreservedDoc:
             except ValueError:
                 return -1
 
-        for placeholder in sorted(self.preserved.keys(), key=placeholder_index, reverse=True):
-            original = self.preserved[placeholder]
-            # Triple-backtick block → isolate on its own lines
-            if original.startswith("```"):
-                original = f"\n\n{original}\n\n"
-            result = result.replace(placeholder, original)
-
-        # Collapse any runs of 3+ newlines introduced above back to a clean blank line
+        # Step 1 — operate on the PLACEHOLDER TOKENS (code not restored yet).
+        # Wrap each multiline code-block placeholder in blank lines, then collapse
+        # 3+ newlines. Doing this while the code is still a single token means the
+        # collapse can never touch blank lines INSIDE the code.
+        code_phs = [p for p, o in self.preserved.items() if o.startswith("```")]
+        for p in code_phs:
+            result = result.replace(p, f"\n\n{p}\n\n")
         result = re.sub(r"\n{3,}", "\n\n", result)
+
+        # Step 2 — restore actual content verbatim (reverse numeric order), with
+        # NO further collapsing, so code internals (e.g. PEP8 double blank lines)
+        # are preserved exactly as Claude wrote them.
+        for placeholder in sorted(self.preserved.keys(), key=placeholder_index, reverse=True):
+            result = result.replace(placeholder, self.preserved[placeholder])
+
         return result
 
 
