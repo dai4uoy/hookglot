@@ -31,6 +31,7 @@ import json
 import re
 import sys
 import os
+import time
 from pathlib import Path
 from datetime import datetime
 
@@ -385,6 +386,11 @@ def walk_back_transcript(transcript_path: str):
 
     assistant_blocks = []
     user_message = None
+    # Diagnostics — surface WHY blocks=0 happens on unfamiliar schemas
+    seen_assistant = 0          # entries whose role resolved to assistant
+    assistant_no_text = 0       # assistant entries that yielded empty text
+    roles_seen = {}             # tally of every role/type encountered
+    stopped_on = "window_end"   # where the walk ended
 
     for line in reversed(lines):
         line = line.strip()
@@ -397,6 +403,7 @@ def walk_back_transcript(transcript_path: str):
 
         # Schema can vary — check both 'role' and 'type'
         role = entry.get("role") or entry.get("type") or ""
+        roles_seen[role] = roles_seen.get(role, 0) + 1
         msg = entry.get("message", entry)
         if not isinstance(msg, dict):
             continue
@@ -405,21 +412,53 @@ def walk_back_transcript(transcript_path: str):
         if role == "user":
             if is_real_user_message(content):
                 user_message = extract_text_from_content(content)
+                stopped_on = "user_boundary"
                 break  # found boundary — stop
             # else: tool_result, keep walking back
         elif role == "assistant":
+            seen_assistant += 1
             text = extract_text_from_content(content)
             if text:
                 assistant_blocks.append(text)
                 if len(assistant_blocks) >= MAX_BLOCKS_TO_COLLECT:
+                    stopped_on = "max_blocks"
                     break
+            else:
+                assistant_no_text += 1
 
     assistant_blocks.reverse()  # back to original order
     debug_log(
         f"walked back: user_msg={'yes' if user_message else 'no'}, "
         f"blocks={len(assistant_blocks)}"
     )
+    # Extra diagnostics only when something looks off (no blocks collected)
+    if not assistant_blocks:
+        debug_log(
+            f"  [diag] lines_scanned={len(lines)} stopped_on={stopped_on} "
+            f"assistant_entries={seen_assistant} (empty_text={assistant_no_text}) "
+            f"roles={roles_seen}"
+        )
     return user_message, assistant_blocks
+
+
+def walk_back_with_retry(transcript_path: str, retries: int = 3, delay: float = 0.15):
+    """Re-read the transcript a few times when blocks come back empty.
+
+    On Claude Code v2.1.193, when cwd is the home dir (so ~/.claude sits *under*
+    the working directory and gets file-history-snapshotted), the Stop hook can
+    fire and read the transcript before Claude Code has flushed the final
+    assistant text entry — yielding user_msg=yes but blocks=0. A short retry lets
+    that write land. When blocks are already present (normal case), this returns
+    immediately with no added delay.
+    """
+    user_msg, blocks = walk_back_transcript(transcript_path)
+    for _ in range(retries - 1):
+        if blocks or not user_msg:
+            break  # got blocks, or no user turn at all → nothing to wait for
+        debug_log(f"blocks=0 with user present — retrying in {delay}s (race?)")
+        time.sleep(delay)
+        user_msg, blocks = walk_back_transcript(transcript_path)
+    return user_msg, blocks
 
 
 def main():
@@ -461,7 +500,7 @@ def main():
     if config.get("output", False):
         cleanup_previous_leak(transcript_path)
 
-    user_msg, assistant_blocks = walk_back_transcript(transcript_path)
+    user_msg, assistant_blocks = walk_back_with_retry(transcript_path)
     session_id = get_session_id_from_transcript(transcript_path)
     debug_log(f"session_id={session_id or '(none)'}")
 

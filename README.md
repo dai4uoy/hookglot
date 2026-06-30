@@ -1,14 +1,14 @@
 # 🌐 hookglot
 
-> Translation hooks for Claude Code — Reduce Claude Code token costs for non-English users by 60-80% 🌐
+> Translation hooks for Claude Code — cut Anthropic-side token cost for non-English users while you keep typing in your own language 🌐
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Claude Code](https://img.shields.io/badge/Claude-Code-orange.svg)](https://claude.com/claude-code)
 [![Cross-platform](https://img.shields.io/badge/OS-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](#)
-[![Version](https://img.shields.io/badge/version-1.2.0-success.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.5.0-success.svg)](CHANGELOG.md)
 
-**hookglot** intercepts your prompts to/from Claude Code and translates them automatically through your choice of LLM provider — local (Ollama) or cloud (9 providers supported). Type in your native language, save tokens, get answers.
+**hookglot** intercepts the prompts and responses flowing through Claude Code and translates them automatically via your choice of LLM provider — local (Ollama) or cloud (9 providers). Type in your native language, save tokens, get answers.
 
 📖 **อ่านเป็นภาษาไทย**: [README.th.md](README.th.md)
 
@@ -19,37 +19,38 @@
 - 🎯 **2 Translation Methods** — input-only or output-only (with disable mode)
 - 🌏 **8 Asian Languages** — Thai, Japanese, Chinese (Simplified/Traditional), Korean, Vietnamese, Indonesian, Malay
 - 🤖 **9 Translation Providers** — Ollama (default, free), OpenAI, Anthropic, Google, DeepSeek, Alibaba, Moonshot, Zhipu, NVIDIA
-- 🛡️ **Smart Format Preservation** — code blocks, URLs, IPs, env vars stay intact through translation
+- 🛡️ **Format Preservation** — code blocks, URLs, IPs, env vars stay intact through translation
+- 💬 **Bilingual Logging** — translated log plus an English-original log, organized by date and an AI-generated session title
 - 🎮 **Slash Commands** — switch settings without leaving Claude Code (`/hookglot-method`, `/hookglot-translator`, `/hookglot-off`, etc.)
-- 🔒 **Privacy-First** — Ollama keeps everything local
 - ✅ **Safe Install** — preserves your existing Claude Code hooks, memory, and slash commands
-
-
-
-https://github.com/user-attachments/assets/797a709a-982b-44be-acfe-37810cda16b3
-
 
 ---
 
 ## 🎬 How It Works
 
 ```
-Method 1 (Input-only) ⭐ Recommended for Thai
+Method 1 (Input-only) Recommended for create a documents/reports
    Native prompt ──► [hook translates → English] ──► Claude
                                                        │
-   Native response ◄──────────────────────────────────-┘ (Claude responds in your language)
+   Native response ◄──────────────────────────────────┘ (Claude responds in your language)
 
-Method 2 (Output-only)
-   Native prompt ────────────────────────────────► Claude (Master Prompt forces English)
+Method 2 (Output-only) — best token savings
+   Native prompt ────────────────────────────────► Claude (overlay enforces English)
                                                        │
    English response shown in Claude Code               │
                                                        ▼
                                           [Stop hook translates → Native]
                                                        │
                                                        ▼
-                                    Native saved to ~/.hookglot/conversation.md
-                                    (NOT shown inline — avoids token leak)
+                          Native log → ~/.hookglot/conversations/<dd.mm.yy>/<title>.md
+                          English log → ~/.hookglot/conversation_en.md
+                          (translation NOT injected inline by default — avoids token leak)
 ```
+
+**Which to pick?** Method 2 saves the most tokens (Claude answers in token-cheap
+English, the provider translates). Method 1 is better when you want Claude to
+*write files* (reports, docs) directly in your language, since the hook only
+translates the response stream, not files on disk.
 
 ---
 
@@ -90,12 +91,12 @@ claude                # use Claude Code as usual — translation is automatic
 
 ### 📖 Viewing translated responses
 
-Translations are saved to:
-- `~/.hookglot/conversation.md` — cumulative log (clearable via `/hookglot-clear-chat`)
-- `~/.hookglot/conversations/<datetime>.md` — per-session files
+For **Method 2**, translations are written to files (not injected inline — see
+[Limitations](#-limitations)):
 
-They are **not shown inline in Claude Code** because doing so would inject Thai
-content back into Claude's transcript, doubling token usage. Use one of:
+- `~/.hookglot/conversations/<dd.mm.yy>/<ai-title>.md` — per-session, organized by date with an AI-generated title
+- `~/.hookglot/conversation.md` — cumulative translated log (clearable via `/hookglot-clear-chat`)
+- `~/.hookglot/conversation_en.md` — cumulative **English original** log (handy for exporting English reports or comparing the translation)
 
 ```bash
 hookglot start              # Launches grip + browser (recommended)
@@ -109,6 +110,18 @@ code ~/.hookglot/conversation.md           # VSCode markdown preview
 tail -f ~/.hookglot/conversation.md        # Linux/Mac
 Get-Content ~/.hookglot/conversation.md -Wait -Tail 0    # PowerShell
 ```
+
+#### Optional: inline display
+
+You can opt in to showing the translation inline in Claude Code:
+
+```bash
+hookglot switch 2 --output on     # show translation inline (off by default)
+```
+
+This is **off by default** because inline display writes the translation into
+Claude Code's transcript. The harness filters most of it back out, but keeping it
+off guarantees zero leak and the fastest turns.
 
 ---
 
@@ -124,9 +137,12 @@ After installation, these work directly inside `claude`:
 | `/hookglot-off`             | Disable hookglot temporarily |
 | `/hookglot-translator kimi` | Switch translator provider   |
 | `/hookglot-lang ja`         | Switch target language       |
+| `/hookglot-clear-chat`      | Clear the conversation logs  |
 | `/hookglot-test`            | Test translation pipeline    |
 
-After any switch, type `/clear` to start a fresh session for the change to take effect.
+After a method or language switch, type `/clear` to start a fresh session for the
+change to take effect. (Toggling `--output` does **not** require `/clear` — the
+hook reads it live each turn.)
 
 ---
 
@@ -136,12 +152,37 @@ After any switch, type `/clear` to start a fresh session for the change to take 
 hookglot install              # Interactive setup
 hookglot status               # Show current configuration
 hookglot switch 1|2|off       # Switch method or disable
+hookglot switch 2 --output on # Toggle inline translation display
 hookglot translator <name>    # Switch provider
 hookglot lang <code>          # Switch language
 hookglot set-key <provider>   # Set API key
+hookglot clear-chat           # Clear conversation logs
 hookglot test                 # Test translation
 hookglot uninstall            # Remove hookglot (preserves other config)
 ```
+
+---
+
+## 📊 Benchmarks
+
+Method 2 saves Anthropic-side tokens because Claude answers in **English** — which
+tokenizes far cheaper than Thai (~2.8 vs ~1.3 chars/token) — and the translation
+to Thai happens at the provider (e.g. DeepSeek), not Anthropic.
+
+A 5-prompt set of universal CS questions (turns 2–5, Opus 4.8), compared
+mode-to-mode:
+
+| Mode | Out tok | Cost | vs native |
+|------|--------:|-----:|----------:|
+| native (Thai) | 7,667 | $0.2841 | base |
+| native_en | 5,077 | $0.2091 | −26% |
+| **hookglot** | 5,305 | $0.1894 | **−33%** |
+| hookglot + caveman | 2,663 | $0.1165 | −59% |
+
+Savings scale with how much Thai the native baseline would naturally produce —
+conversational questions save more, English-heavy technical ones save less.
+
+➡️ Full methodology and how to reproduce: [**docs/benchmark.md**](docs/benchmark.md)
 
 ---
 
@@ -157,7 +198,6 @@ hookglot uninstall            # Remove hookglot (preserves other config)
 | `vi`    | Vietnamese     | Tiếng Việt       |
 | `id`    | Indonesian     | Bahasa Indonesia |
 | `ms`    | Malay          | Bahasa Melayu    |
-
 
 ---
 
@@ -199,13 +239,19 @@ When you run `hookglot install` or `hookglot switch`, hookglot detects this and 
 
 The snippet uses your actual Python path (no manual editing needed).
 
+> **Tip:** if a hook fires but no translation appears, run Claude Code from a
+> sub-folder (e.g. `~/work`) rather than your home directory directly. When the
+> working directory *is* your home, `~/.claude` sits under it and Claude Code's
+> file-snapshotting can race the hook. hookglot retries the transcript read to
+> mitigate this, but a sub-folder avoids it entirely.
+
 ---
 
 ## 🛡️ Format Preservation
 
 hookglot uses 3-layer format protection so technical content stays intact through translation:
 
-1. **Code Block Extraction** — `\`\`\`code\`\`\`` and `` `inline` `` preserved verbatim
+1. **Code Block Extraction** — `` ```code``` `` and `` `inline` `` preserved verbatim, and re-inserted on their own lines so a translated fence never glues onto prose
 2. **Aggressive Element Protection** — URLs, IPs, emails, env vars, file paths, hashes, constants stay untouched
 3. **Strict Translator Prompts** — explicit instructions to maintain Markdown structure
 
@@ -219,18 +265,22 @@ Result: ~90-95% format reliability for typical use.
 - [**Providers**](docs/providers.md) — Setup guide for all 9 providers
 - [**Languages**](docs/languages.md) — Supported languages and language codes
 - [**Architecture**](docs/architecture.md) — How hooks work internally
+- [**Benchmark**](docs/benchmark.md) — Measuring token savings reliably
 - [**Troubleshooting**](docs/troubleshooting.md) — Common issues and fixes
 
 ---
 
 ## ⚠️ Limitations
 
-- **No inline translation display**: Translations are saved to `~/.hookglot/conversation.md` and viewable via `hookglot start` (grip) or any markdown editor. Inline display in Claude Code would inject translations back into Anthropic's transcript, doubling token usage. Saving to file avoids this entirely.
-- **First Ollama call**: ~5-10s while model loads into RAM
-- **No quota fallback**: When a cloud provider's quota runs out, you get a notification — no automatic switching
-- **Project-level settings**: must be configured manually (snippet provided)
-- **Claude occasionally ignores Master Prompt**: For Method 2, Claude may respond in mixed languages despite instructions. The defensive check catches most cases but not all. This is an LLM autonomy limit.
-- **Cross-platform testing**: Heavily tested on Windows + Python 3.14. macOS and Linux should work (using same `pathlib`, `subprocess`, stdlib) but have not been verified in production.
+- **No inline translation display by default**: translations are saved to files and viewable via `hookglot start` (grip) or any markdown editor. Inline display is opt-in (`--output on`) because it writes translations into Anthropic's transcript. Saving to file keeps the leak at zero.
+- **Method 2 writes files in English**: the Stop hook translates the response *stream*, not files Claude creates on disk. If Claude writes a report/`.docx`/`.pdf`, it stays English. Use **Method 1** when you need Claude to author files directly in your language.
+- **Transcript schema is version-coupled**: hookglot parses Claude Code's transcript `.jsonl`, whose structure changes between releases. Re-verify after a Claude Code update if hooks stop producing output.
+- **Long agentic turns can hit translation timeouts**: very long responses may exceed the provider's read timeout (English shown, error noted). Raise `timeout` under your provider in `~/.hookglot/config.yaml`.
+- **First Ollama call**: ~5-10s while the model loads into RAM.
+- **No quota fallback**: when a cloud provider's quota runs out you get a notification — no automatic switching.
+- **Project-level settings**: must be configured manually (snippet provided).
+- **Claude occasionally ignores the overlay**: for Method 2, Claude may respond in mixed languages despite instructions. A defensive check catches most cases but not all — an LLM autonomy limit.
+- **Cross-platform testing**: heavily tested on Windows + Python 3.14 and on Linux (Kali). macOS should work (same `pathlib`, `subprocess`, stdlib) but is less verified.
 
 ---
 
@@ -254,4 +304,4 @@ MIT © 2026 hookglot contributors
 
 - [Anthropic](https://anthropic.com) for Claude Code and the hooks system
 - [Ollama](https://ollama.com) for accessible local LLMs
-- [DeepSeek](https://platform.deepseek.com) for excellent multilingual model
+- [DeepSeek](https://platform.deepseek.com) for an excellent multilingual model
