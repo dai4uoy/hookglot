@@ -14,6 +14,16 @@
 
 ---
 
+---
+
+
+https://github.com/user-attachments/assets/080a1f3a-03e1-410a-a985-7c301509fc7c
+
+
+---
+
+---
+
 ## ✨ Features
 
 - 🎯 **2 Translation Methods** — input-only or output-only (with disable mode)
